@@ -1,59 +1,114 @@
 import pandas as pd
-import numpy as np
-from scipy.cluster.hierarchy import linkage, dendrogram
-from matplotlib import pyplot as plt
-
-#prelucrare fisier de intrare
-t=pd.read_csv("data_in/MiscareaNaturala.csv", index_col=0) #de pus None la indice pt cerintele 1 si 2 de la a
-t_clean = t.dropna()
-t_clean = t_clean[~(t_clean == np.inf).any(axis=1)]
-variabile_observate = list(t_clean)[1:]
-x=t_clean[variabile_observate].values
-
-#functii cerinte a1 si a2
-
-def cerinta_1(t):
-    rs_global_mean = t['RS'].mean()
-    t_filtered = t[t['RS'] < rs_global_mean].copy()
-    t_filtered = t_filtered.sort_values('RS', ascending=False)
-    t_result = t_filtered[['Country_Number', 'Country_Name', 'RS']].copy()
-    t_result.to_csv("data_out/Cerinta1.csv")
-
-def cerinta_2(t): #maximul pt fiecara tara ca nu am continente
-    indicators = ['RS','FR','LM','MMR','LE','LEM','LEF']
-    row_data = {}
-    for indicator in indicators:
-        max_value =t[indicator].max()
-        countries_with_max = t[t[indicator]==max_value]['Country_Name'].values
-        country_codes = ','.join(countries_with_max)
-        row_data[indicator] = country_codes
-    t_result = pd.DataFrame([row_data])
-    t_result=t_result[indicators]
-    t_result.to_csv("data_out/Cerinta2.csv")
+from scipy.cluster.hierarchy import linkage
 
 
-#cerinta b1
-x = t_clean[variabile_observate].values
-metoda_clusterizare="ward"
-h = linkage(x, metoda_clusterizare)
-print("Matricea ierarhiei")
-print(h)
+# A.1. Țările cu RS sub media globală
 
-t_clean_h = pd.DataFrame(h, columns=['Cluster_1', 'Cluster_2', 'Distanta', 'Numar_Instante'])
+def cerinta1():
+    miscare_df = pd.read_csv("data_in/MiscareaNaturala.csv", index_col=0)
+    coduri_df = pd.read_csv("data_in/CoduriTariExtins.csv", index_col=0)
 
-t_clean_h.index = [f'Fuziune {i+1}' for i in range (len(h))]
-t_clean_h.index.name = 'Pas_Junctiune'
-t_clean_h.to_csv("data_out/h.csv")
+    #calcul medie globala a rs
+    media_rs_global = miscare_df['RS'].mean()
 
-def plot_ierarhie(h:np.ndarray, etichete=None, color_threshold=0, titlu="Plot ierarhie"):
-    fig=plt.figure(figsize=(10,10))
-    ax = fig.add_subplot(1,1,1)
-    ax.set_title(titlu)
-    dendrogram(h, labels=etichete, color_threshold=color_threshold, ax=ax)
+    #filtrare tari cu rs sub medie
+    tari_sub_medie = miscare_df[miscare_df['RS'] < media_rs_global].copy()
 
-plot_ierarhie(h, t_clean.index)
-#np.savetxt("data_out/h.csv", h, delimiter=",", fmt="%.6f") #mai usor si nu am nevoie de dataframe ca sa fac csv ul corect dar incomplet, salveaza doar matricea
-plt.show()
+    #sortare descrescatoare dupa rs
+    tari_sub_medie = tari_sub_medie.sort_values('RS', ascending=False)
 
-cerinta_1(t_clean)
-cerinta_2(t_clean)
+    #selectare coloane cerute si redenumire output
+    output = tari_sub_medie[['Three_Letter_Country_Code', 'Country_Name', 'RS']].copy()
+    output.columns = ['Three_Letter_Country_Code', 'Country_Name', 'RS']
+
+    #salvare fisier
+    output.to_csv("data_out/Cerinta1.csv")
+    print("Cerinta1.csv salvat cu succes!")
+    return miscare_df, coduri_df
+
+# A.2. Țările cu valori maxime pe continent
+def cerinta2(miscare_df, coduri_df):
+    #Unirea datelor pentru a avea continentul pentru fiecare tara
+    df_complet = pd.merge(miscare_df, coduri_df, on='Three_Letter_Country_Code')
+
+    #lista de indicatori pentru care se cauta maxim
+    indicatori = ['FR','IM','LE','LEF','LEM','MMR','RS']
+
+    #initializare data frame gol pt rezultate
+    continente = df_complet['Continent_Name'].unique()
+    rezultate = pd.DataFrame()
+    rezultate['Continent_Name'] = continente
+
+    for indicator in indicatori:
+        coduri_continent = []
+
+        for continent in continente:
+            df_continent = df_complet[df_complet['Continent_Name']== continent]
+
+            if indicator in ['IM', 'MMR']:
+                # val minima
+                min_val = df_continent[indicator].min()
+                tara = df_continent[df_continent[indicator]==min_val].iloc[0]
+            else:
+                #val maxima
+                max_val = df_continent[indicator].max()
+                tara = df_continent[df_continent[indicator]==max_val].iloc[0]
+            coduri_continent.append(tara['Three_Letter_Country_Code'])
+
+        #adaugare la coloana de rezultate
+        rezultate[indicator] = coduri_continent
+
+    #salvare
+    rezultate.to_csv("data_out/Cerinta2.csv", index=False)
+    print("Cerinta2.csv salvat cu succes!")
+    return df_complet
+# B. Analiza de clusteri
+
+def analiza_cluster(df_complet):
+    #pregatire date clusterizare prin selectare tari cu toti indicatorii completati
+    indicatori = ['FR','IM','LE','LEF','LEM','MMR','RS']
+    df_clean = df_complet.dropna(subset=indicatori)
+
+    #standardizare date (importanta pt ward)
+    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(df_clean[indicatori])
+
+    # B.1. Matricea ierarhie
+    # Calcularea distanței euclidiene și linkage Ward
+    Z = linkage(data_scaled, method='ward', metric='euclidean')
+
+    #creare matrice ierarhie
+    matrice_ierarhie=[]
+    for i, (clust1, clust2, dist, size) in enumerate(Z,1):
+        #conversie la indici orifinal pt clusterele cu < n_observatii
+        n_obs = len(data_scaled)
+        clust1_str = str(int(clust1)) if clust1 < n_obs else f"C{int(clust1 - n_obs + 1)}"
+        clust2_str = str(int(clust2)) if clust2 < n_obs else f"C{int(clust2 - n_obs + 1)}"
+
+        matrice_ierarhie.append({
+            'Jonctiune': i,
+            'Cluster 1': clust1_str,
+            'Cluster 2': clust2_str,
+            'Distanta': f"{dist:.4f}",
+            'Dimensiune_Cluster': int(size)
+        })
+
+    #salvare matrice ierarhie
+    pd.DataFrame(matrice_ierarhie).to_csv("data_out/h.csv", index=False)
+    print("h.csv salvat cu succes!")
+    return Z
+
+def main():
+    print("\nCerinta A.1.")
+    miscare_df, coduri_df = cerinta1()
+
+    print("\nCerinta A.2.")
+    df_complet = cerinta2(miscare_df, coduri_df)
+
+
+    print("\nCerinta B.1.")
+    Z = analiza_cluster(df_complet)
+
+if __name__ == "__main__":
+    main()

@@ -1,2 +1,7 @@
-,RS,FR,LM,MMR,LE,LEM,LEF
-0,Uzbekistan,Franta,Uzbekistan,Italia,Franta,"Franta,Uzbekistan",Franta
+Continent_Name,FR,IM,LE,LEF,LEM,MMR,RS
+Asia,AFG,SGP,JPN,JPN,SGP,KWT,OMN
+Europe,TUR,ISL,CHE,ESP,ISL,FIN,LUX
+Africa,NER,MUS,DZA,MUS,DZA,LBY,GNQ
+South_America,BOL,CHL,CHL,CHL,CHL,URY,BOL
+Oceania,SLB,AUS,AUS,AUS,AUS,AUS,VUT
+North_America,HTI,CAN,CAN,CAN,CAN,CAN,BLZ
